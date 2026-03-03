@@ -1,0 +1,56 @@
+#Run this command in Google Colab to install qiskit:
+# !pip install qiskit qiskit-optimization qiskit-algorithms qiskit-aer service-identity
+
+# This is the full code to be run on Google Colab 
+# Implements the Quantum Approximate Optimization Algorithm (QAOA) for Max-Cut
+# in a hybrid of qiskit-optimization and core qiskit. Uses optimization for the
+# more demanding parts of the algorithm and core for the simpler parts to aid
+# in learning quantum concepts.
+# Author: Giovanni Rebosio
+# Date: 11/30/2025
+
+import numpy as np
+import networkx as nx
+import matplotlib.pyplot as plt
+from scipy.optimize import minimize
+from qiskit import QuantumCircuit
+from qiskit.circuit.library import QAOAAnsatz
+from qiskit.quantum_info import SparsePauliOp
+from qiskit.primitives import StatevectorEstimator
+from qiskit_optimization.applications import Maxcut
+from qiskit_optimization.converters import QuadraticProgramToQubo
+
+#creating graph via qiskit-opt
+graph = nx.Graph()
+graph.add_nodes_from([0, 1, 2, 3])
+graph.add_edges_from([(0, 1), (1, 2), (2, 3), (3, 0), (0, 2)])
+
+#printing graph
+print("Here is the graph that Max-Cut will be applied:")
+nx.draw(graph, with_labels=True, node_color='blue')
+plt.show()
+
+#Converting graph into Hamiltonian via application module
+max_cut = Maxcut(graph)
+qp = max_cut.to_quadratic_program()         #convert to quadtratic
+qubo = QuadraticProgramToQubo().convert(qp) #convert to Quadratic Unconstrained Binary Optimization
+hamiltonian, offset = qubo.to_ising()       #convert to hamiltonian
+print(f"\nHamiltonian:\n {hamiltonian}")
+
+#Optimization Algorithm
+ansatz = QAOAAnsatz(cost_operator = hamiltonian, reps = 1)  #extract quantum data
+estimator = StatevectorEstimator()  
+
+def costFunction(params):
+  pub = (ansatz, hamiltonian, params) #primitive unified bloc
+  job = estimator.run([pub])          #find minimum
+  return job.result()[0].data.evs     #return energy
+
+initParams = [1.0, 1.0]
+
+print("\nOptimizing...")
+result = minimize(costFunction, initParams, method='COBYLA', options = {'maxiter': 30}) #run COBYLA optimizer
+print(f"\nOptimal Parameters: {result.x}")
+print(f"Minimum Energy:       {result.fun}")
+maxCutValue = round(-(result.fun + offset))     #round max cut result
+print(f"\nMax-Cut:            {maxCutValue}")
